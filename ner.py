@@ -289,8 +289,10 @@ def create_model(bert_config, is_training, input_ids, input_mask,
         use_one_hot_embeddings = use_one_hot_embeddings
     )
 
+    # (25, 128, 768)
     output_layer = model.get_sequence_output()
 
+    # 768
     hidden_size = output_layer.shape[-1].value
 
     output_weights = tf.get_variable(
@@ -304,14 +306,24 @@ def create_model(bert_config, is_training, input_ids, input_mask,
         if is_training:
             output_layer = tf.nn.dropout(output_layer, keep_prob = 0.9)
 
+        # (3200, 768)
         output_layer = tf.reshape(output_layer, [-1, hidden_size])
+
+        # (3200, 11)
         logits = tf.matmul(output_layer, output_weights, transpose_b = True)
+
+        # (3200, 11)
         logits = tf.nn.bias_add(logits, output_bias)
+
+        # (25, 128, 11)
         logits = tf.reshape(logits, [-1, FLAGS.max_seq_length, num_labels])
 
         log_probs = tf.nn.log_softmax(logits, axis = -1)
 
+        #one_hot : (25, 128)
+        #one_hot_labels : (25, 128, 11)
         one_hot_labels = tf.one_hot(labels, depth = num_labels, dtype = tf.float32)
+        # (25, 128)
         per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis = -1)
         loss = tf.reduce_sum(per_example_loss)
 
