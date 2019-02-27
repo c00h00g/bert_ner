@@ -177,14 +177,8 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
   for (i, label) in enumerate(label_list):
     label_map[label] = i
 
-  #print("=============================================================")
-  #print(example.text)
-  #print(example.label)
-
   text_tokens = example.text.split(' ')
   label_tokens = example.label.split(' ')
-  #print(text_tokens)
-  #print(label_tokens)
 
   tokens = []
   labels = []
@@ -212,6 +206,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
 
   #add first seq
   for one_token in tokens:
+      #这儿必须处理下，因为可能有些字符未能命中，需要转换成[UNK]
       one_token = tokenizer.tokenize(one_token)
       ntokens.append(one_token[0])
       segment_ids.append(0)
@@ -220,15 +215,8 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
 
   #add second seq
   for one_token in labels:
-    try:
-        label_ids.append(label_map[one_token])
-    except:
-        print("========chg=======")
-        print(label_tokens)
+    label_ids.append(label_map[one_token])
   label_ids.append(label_map["[SEP]"])
-
-  #print("=====chg_tokens========================================================")
-  #print(ntokens)
 
   input_ids = tokenizer.convert_tokens_to_ids(ntokens)
   input_mask = [1] * len(input_ids)
@@ -239,6 +227,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
     input_mask.append(0)
     segment_ids.append(0)
     ntokens.append("**NULL**")
+
   #add padding
   while len(label_ids) < max_seq_length:
     label_ids.append(0)
@@ -253,15 +242,6 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
     real_label_len = real_label_len,
   )
 
-  #print(ntokens)
-  #print(input_ids)
-  #print(input_mask)
-  #print(segment_ids)
-  #print(labels)
-  #print(label_ids)
-  #print(real_label_len)
-  #print
-
   return feature
 
 def file_based_convert_examples_to_features(
@@ -269,7 +249,6 @@ def file_based_convert_examples_to_features(
     """处理训练数据"""
     writer = tf.python_io.TFRecordWriter(output_file)
     for (ex_index, example) in enumerate(examples):
-        #print(ex_index)
         if ex_index % 5000 == 0:
             tf.logging.info("Writing example %d of %d" %(ex_index, len(examples)))
         feature = convert_single_example(ex_index, example, label_list, max_seq_length, tokenizer, mode)
@@ -310,10 +289,6 @@ def create_model(bert_config, is_training, input_ids, input_mask,
         use_one_hot_embeddings = use_one_hot_embeddings
     )
 
-    #vocab_size
-    #vocab_size = 21128
-
-    #(25, 20, 768)
     output_layer = model.get_sequence_output()
 
     hidden_size = output_layer.shape[-1].value
@@ -329,24 +304,12 @@ def create_model(bert_config, is_training, input_ids, input_mask,
         if is_training:
             output_layer = tf.nn.dropout(output_layer, keep_prob = 0.9)
 
-        #Tensor("IteratorGetNext:3", shape=(25, 1), dtype=int32)
-        #print("chg===============================")
-        #print(tf.reshape(real_label_len, [-1]))
-
-        #slice output
-        #output_layer = tf.strided_slice(output_layer, [0, 0, 0], [FLAGS.train_batch_size, tf.reshape(real_label_len, [-1]), hidden_size])
-
         output_layer = tf.reshape(output_layer, [-1, hidden_size])
         logits = tf.matmul(output_layer, output_weights, transpose_b = True)
         logits = tf.nn.bias_add(logits, output_bias)
         logits = tf.reshape(logits, [-1, FLAGS.max_seq_length, num_labels])
 
         log_probs = tf.nn.log_softmax(logits, axis = -1)
-
-        #slice labels
-        #labels = tf.slice(labels, [0, 0], [FLAGS.train_batch_size, real_len])
-        #Tensor("loss/Neg:0", shape=(25, 20), dtype=float32)
-        #Tensor("loss/Sum_1:0", shape=(), dtype=float32)
 
         one_hot_labels = tf.one_hot(labels, depth = num_labels, dtype = tf.float32)
         per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis = -1)
@@ -375,8 +338,6 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
             bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, num_labels, real_label_len, use_one_hot_embeddings)
         tvars = tf.trainable_variables()
         scaffold_fn = None
-
-        #tf.logging.info("total loss is : %s" %(total_loss))
 
         if init_checkpoint:
             (assignment_map, initialized_variable_names) = modeling.get_assignment_map_from_checkpoint(tvars,init_checkpoint)
@@ -522,47 +483,12 @@ class NerProcessor(DataProcessor):
             examples.append(InputExample(guid=guid, text=text, label=label))
         return examples
 
-class Seq2SeqProcessor(DataProcessor):
-  def get_train_examples(self, data_dir):
-      return self._create_example(
-          #self._read_data(os.path.join(data_dir, "test_data")), "train")
-          self._read_data(os.path.join(data_dir, "train.txt")), "train")
-
-  def get_dev_examples(self, data_dir):
-      return self._create_example(
-          self._read_data(os.path.join(data_dir, "dev.txt")), "dev")
-
-  def get_test_examples(self,data_dir):
-      return self._create_example(
-          self._read_data(os.path.join(data_dir, "test.txt")), "test")
-
-
-  def get_labels(self, data_path):
-      """get all labels"""
-      label_list = []
-      #with open("chinese_L-12_H-768_A-12/vocab.txt") as f:
-      with open(data_path) as f:
-          for line in f.readlines():
-              line = line.rstrip()
-              label_list.append(line)
-      return label_list
-
-  def _create_example(self, lines, set_type):
-      examples = []
-      for (i, line) in enumerate(lines):
-          guid = "%s-%s" % (set_type, i)
-          text = tokenization.convert_to_unicode(line[0])
-          label = tokenization.convert_to_unicode(line[1])
-          examples.append(InputExample(guid=guid, text=text, label=label))
-      return examples
-
 def main(_):
     tf.logging.set_verbosity(tf.logging.INFO)
     tokenizer = tokenization.FullTokenizer(
         vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
 
     processors = {
-      "seq2seq": Seq2SeqProcessor,
       "ner" : NerProcessor
     }
 
@@ -641,10 +567,6 @@ def main(_):
     if FLAGS.do_predict:
         token_path = os.path.join(FLAGS.output_dir, "token_test.txt")
 
-        #with open('./output/label2id.pkl','rb') as rf:
-        #    label2id = pickle.load(rf)
-        #    id2label = {value:key for key,value in label2id.items()}
-
         id2label = dict()
         with open("./data_ner/all_labels") as f:
             n = 0
@@ -657,11 +579,6 @@ def main(_):
             os.remove(token_path)
 
         predict_examples = processor.get_test_examples("./data_ner/")
-        print("======================================begin================")
-        for one_ex in predict_examples:
-            print(one_ex.text)
-            print(one_ex.label)
-        print("======================================end================")
 
         predict_file = os.path.join(FLAGS.output_dir, "predict.tf_record")
         file_based_convert_examples_to_features(predict_examples, label_list,
@@ -683,14 +600,11 @@ def main(_):
             drop_remainder=predict_drop_remainder)
 
         result = estimator.predict(input_fn=predict_input_fn)
-        #for elem in result:
-        #    print(elem)
+
         output_predict_file = os.path.join(FLAGS.output_dir, "label_test.txt")
         with open(output_predict_file,'w') as writer:
             for prediction in result:
-                #print(prediction)
                 output_line = " ".join(id2label[id] for id in prediction if id!=0) + "\n"
-                #print(output_line)
                 writer.write(output_line)
 
     if FLAGS.do_eval:
@@ -722,3 +636,4 @@ def main(_):
 if __name__ == "__main__":
     flags.mark_flag_as_required("vocab_file")
     tf.app.run()
+
