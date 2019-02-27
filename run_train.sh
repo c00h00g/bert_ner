@@ -1,6 +1,10 @@
 #!/bin/bash
 source ~/.bashrc
 
+if [[ ! -d ./output_t ]]; then
+    mkdir output_t
+fi
+
 CUDA_VISIBLE_DEVICES=3 python_chg seq2seq.py --vocab_file="chinese_L-12_H-768_A-12/vocab.txt" \
                                              --do_train=true \
                                              --output_dir="./output" \
