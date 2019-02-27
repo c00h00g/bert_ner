@@ -1,0 +1,11 @@
+[PAD]
+O
+B-PER
+I-PER
+B-ORG
+I-ORG
+B-LOC
+I-LOC
+X
+[CLS]
+[SEP]
